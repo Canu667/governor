@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Governor</title>
+    <style>
+        #work-trigger {
+            color:white;
+            height: 50px;
+            padding-top: 15px;
+        }
+        #home-trigger {
+            color:white;
+            height: 50px;
+            padding-top: 15px;
+        }
+        #button-push {
+            display:none;
+        }
+        .pomodoro-counter {
+            padding: 3rem 1.5rem;
+            text-align: center;
+        }
+    </style>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.2.0.js" integrity="sha256-wPFJNIFlVY49B+CuAIrDr932XSb6Jk3J1M22M3E2ylQ=" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.0/moment-with-locales.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase-messaging.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase-storage.js"></script>
+        <script>
+            // Initialize Firebase
+            var config = {
+                apiKey: "AIzaSyADM44nXJ35mSeQAmJz86bGvYYtXqr6yiA",
+                authDomain: "bulldog-90c95.firebaseapp.com",
+                databaseURL: "https://bulldog-90c95.firebaseio.com",
+                storageBucket: "bulldog-90c95.appspot.com",
+                messagingSenderId: "250650707488"
+            };
+            firebase.initializeApp(config);
+        </script>
+        <script>
+            //const POMODORO_DURATION = 1500;
+
+            const POMODORO_DURATION = 10000;
+
+            let globalTimer = POMODORO_DURATION;
+            let globalPomodoroRunning = false;
+            let globalWorkTime = 0;
+
+            $(document).ready(function() {
+                updatePomodoroDisplay(globalTimer);
+
+                $("form").submit(function(e){
+                    return false;
+                });
+
+                var intervalId = null;
+                $('#button-start').click(function() {
+                    intervalId = startTimer(globalTimer);
+                });
+
+                $('#button-stop').click(function() {
+                    if (globalPomodoroRunning) {
+                        var diffTime = POMODORO_DURATION - globalTimer;
+                        var obj = moment(diffTime);
+
+                        globalPomodoroRunning = false;
+
+                        stopTimer(intervalId, $('#pomodoro-time'));
+                        appendLog('Worked for ' + obj.format('mm') + ' minutes and ' + obj.format('ss') + ' seconds.');
+                        pushTimer(POMODORO_DURATION);
+                        updatePomodoroDisplay(globalTimer);
+
+                        globalWorkTime += diffTime;
+                        updateWholeWorkTimeDisplay(globalWorkTime);
+                    }
+                });
+            });
+        </script>
+
+        <script>
+            function updateWholeWorkTimeDisplay(timer) {
+                $('#workTime').text(moment.utc(timer).format('HH:mm:ss'));
+            }
+
+            function appendLog(msg) {
+                $('#log').append('<p>' + msg + '</p>');
+            }
+
+            function stopTimer(intervalId) {
+                clearInterval(intervalId);
+            }
+
+            function loadAll() {
+                firebase.database().ref('/pomodoros/pomodoros').once('value').then(function(snapshot) {
+                    var allDays = snapshot.val();
+                    console.log(allDays);
+                    for(day in allDays) {
+                        console.log(allDays[day]);
+                    }
+                });
+            }
+
+            function listenOn() {
+                var starCountRef = firebase.database().ref('posts/' + postId + '/starCount');
+                starCountRef.on('value', function(snapshot) {
+                    updateStarCount(postElement, snapshot.val());
+                });
+            }
+
+            function updateOnePomodoroFlow() {
+                pushTimer(POMODORO_DURATION);
+                updatePomodoroDisplay(globalTimer);
+
+                globalWorkTime += POMODORO_DURATION;
+                updateWholeWorkTimeDisplay(globalWorkTime);
+
+                const dateId = moment(new Date()).format('DD-MM-YYYY');
+
+                var type = $('input[name=type]:checked').val();
+                var task = $('input[name=taskName]').val();
+
+                if (!task || task == '' ) {
+                    task = 'Default';
+                }
+
+                var url = '/pomodoros/pomodoros/' + dateId + '/' + type + '/' + task;
+
+                firebase.database().ref(url).once('value').then(function(snapshot) {
+                    firebase.database().ref(url).set({
+                        count: snapshot.val().count + 1
+                    });
+                }).catch(function(e) {
+                    console.log(e);
+                    firebase.database().ref(url).set({
+                        count: 1
+                    });
+                });
+
+                appendLog('Brawo!!! Did one pomodoro!!');
+            }
+
+            function updatePomodoroDisplay(timer) {
+                var time = moment(timer).format('mm:ss');
+                $('#pomodoro-time').text(time);
+                document.title = time + ' - Governor';
+            }
+
+            function startTimer(timer) {
+                globalPomodoroRunning = true;
+
+                var intervalId = setInterval(function () {
+                    timer -= 1000;
+                    updatePomodoroDisplay(timer);
+
+                    if (timer == 0) {
+                        globalPomodoroRunning = false;
+                        updateOnePomodoroFlow();
+                        clearInterval(intervalId);
+                    } else {
+                        pushTimer(timer);
+                    }
+                }, 1000);
+
+                return intervalId;
+            }
+
+            function pushTimer(timer) {
+                globalTimer = timer;
+            }
+        </script>
+    </head>
+    <body>
+    <nav class="navbar navbar-toggleable-md navbar-inverse bg-inverse fixed-top">
+        <a class="navbar-brand" href="#">Slaver</a>
+        <label id="work-trigger" class="radio-inline"><input type="radio" value="work" name="type" checked="checked">Work</label>
+        <label id="home-trigger" class="radio-inline"><input type="radio" value="home" name="type">Home</label>
+    </nav>
+
+    <div class="container">
+        <label>Task Name: <input type="text" value="Default" name="taskName"></label>
+    </div>
+
+    <div class="pomodoro-counter container">
+        <div class="jumbotron">
+            <form>
+                <div id="pomodoro-time">00:00</div>
+                <button id="button-start">Start</button>
+                <button id="button-stop">Stop</button>
+                <button id="button-push">Commit</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="log" class="container"></div>
+    <br>
+    <div class="container">
+        <b>Whole Work Time:</b><div id="workTime">00:00:00</div>
+    </div>
+
+
+    </body>
+    </html>
